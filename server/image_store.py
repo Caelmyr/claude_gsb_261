@@ -13,7 +13,7 @@ import uuid
 
 from PIL import Image, ImageOps, UnidentifiedImageError
 
-from . import config
+from . import config, exifmeta
 from .storage import JsonStore, atomic_write_bytes, now_iso
 
 
@@ -135,6 +135,53 @@ class ImageStore:
             return doc
 
         return self.meta.update(_upd).get(image_id)
+
+    def update_exif(self, image_id, fields):
+        """修改图像的 EXIF 并保存到图片文件本身。
+
+        写回后内容变化 -> 内容哈希变化，按内容寻址规则迁移存储文件：
+        先原子写新文件 -> 更新元数据 -> 删旧文件（中途崩溃只留孤儿文件，
+        reconcile 能识别）。id 保持稳定，标签/标注等外部引用不断；
+        hash 更新后旧的结果缓存键自然失效。方向可能变化，缩略图一并重建。
+        """
+        rec = self.get(image_id)
+        if not rec:
+            return None
+        path = self.file_path(image_id)
+        if not path or not os.path.exists(path):
+            raise exifmeta.ExifError("图像文件缺失")
+        data = exifmeta.rewrite_exif(path, fields)
+        new_hash = _content_hash(data)
+        if new_hash == rec["hash"]:
+            return rec  # 内容无实际变化
+
+        new_name = new_hash + rec["ext"]
+        dest = os.path.join(config.IMAGES_DIR, new_name)
+        if new_name != rec["stored_name"] and os.path.exists(dest):
+            raise exifmeta.ExifError("修改后的内容与已有图像文件冲突")
+        atomic_write_bytes(dest, data)
+
+        old_name = rec["stored_name"]
+
+        def _upd(doc):
+            doc = dict(doc)
+            r = doc.get(image_id)
+            if r:
+                r = dict(r)
+                r.update({"stored_name": new_name, "hash": new_hash,
+                          "size_bytes": len(data), "updated_at": now_iso()})
+                doc[image_id] = r
+            return doc
+
+        updated = self.meta.update(_upd).get(image_id)
+
+        if old_name != new_name:
+            try:
+                os.unlink(os.path.join(config.IMAGES_DIR, old_name))
+            except OSError:
+                pass
+        self._make_thumbnail(image_id, data)
+        return updated
 
     def add_annotation(self, image_id, box, label, color="#ff5252"):
         """给图像加一条人工标注（目标检测标注页）。"""

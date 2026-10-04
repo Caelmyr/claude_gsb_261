@@ -10,6 +10,7 @@ from flask import Blueprint, jsonify, request, send_file
 from PIL import Image, ImageChops
 
 from . import config, pipeline as pipeline_engine
+from . import exifmeta
 from .algorithms import detection, features, segmentation, style, util
 from .batch import BatchManager, process_image
 from .cache import ResultCache, make_key
@@ -230,6 +231,72 @@ def delete_annotation(image_id, index):
     if not rec:
         return jsonify({"error": "not found"}), 404
     return jsonify(_image_view(rec))
+
+
+# ---------------------------------------------------------------------------
+# EXIF 元信息（查看 / 单张编辑 / 批量编辑）
+# ---------------------------------------------------------------------------
+@bp.get("/images/<image_id>/exif")
+def get_image_exif(image_id):
+    rec = image_store.get(image_id)
+    if not rec:
+        return jsonify({"error": "not found"}), 404
+    path = image_store.file_path(image_id)
+    if not path or not __import__("os").path.exists(path):
+        return jsonify({"error": "图像文件缺失"}), 404
+    try:
+        meta = exifmeta.read_metadata(path)
+    except exifmeta.ExifError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify({"image_id": image_id, "editable_fields": exifmeta.EDITABLE_FIELDS,
+                    "exif": meta})
+
+
+@bp.put("/images/<image_id>/exif")
+def put_image_exif(image_id):
+    data = request.get_json(silent=True) or {}
+    fields = data.get("fields", data)
+    try:
+        rec = image_store.update_exif(image_id, fields)
+    except exifmeta.ExifError as exc:
+        return jsonify({"error": str(exc)}), 400
+    if not rec:
+        return jsonify({"error": "not found"}), 404
+    return jsonify({"image": _image_view(rec),
+                    "exif": exifmeta.read_metadata(image_store.file_path(image_id))})
+
+
+@bp.post("/images/exif/batch")
+def batch_update_exif():
+    """批量修改多张图的 EXIF。逐张独立处理：单张失败只标记该张，不影响整批。"""
+    data = request.get_json(silent=True) or {}
+    image_ids = data.get("image_ids", [])
+    fields = data.get("fields", {})
+    if not image_ids or not isinstance(image_ids, list):
+        return jsonify({"error": "缺少 image_ids"}), 400
+    try:
+        exifmeta.validate_fields(fields)  # 字段本身非法 -> 整体 400
+    except exifmeta.ExifError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    results = []
+    for iid in image_ids:
+        rec = image_store.get(iid)
+        if not rec:
+            results.append({"id": iid, "filename": str(iid)[:12],
+                            "status": "error", "reason": "图像不存在"})
+            continue
+        try:
+            image_store.update_exif(iid, fields)
+            results.append({"id": iid, "filename": rec["filename"], "status": "ok"})
+        except exifmeta.ExifError as exc:
+            results.append({"id": iid, "filename": rec["filename"],
+                            "status": "error", "reason": str(exc)})
+        except Exception as exc:  # noqa: BLE001 兜底：绝不让一张拖垮整批
+            results.append({"id": iid, "filename": rec["filename"],
+                            "status": "error", "reason": f"内部错误：{exc}"})
+    ok = sum(1 for r in results if r["status"] == "ok")
+    return jsonify({"results": results, "ok": ok, "failed": len(results) - ok})
 
 
 # ---------------------------------------------------------------------------

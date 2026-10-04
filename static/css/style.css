@@ -229,3 +229,13 @@ input[type="color"] { width: 100%; height: 34px; border: 1px solid var(--border-
 
 .keypoint-stats { font-size: 12px; color: var(--text-dim); }
 .desc-preview { font-family: var(--mono); font-size: 11px; color: var(--text-faint); word-break: break-all; max-height: 90px; overflow: auto; background: var(--bg-soft); padding: 8px; border-radius: var(--radius-sm); }
+
+/* ---------- 元信息（EXIF） ---------- */
+.exif-check { position: absolute; top: 6px; left: 6px; z-index: 2; width: 16px; height: 16px; cursor: pointer; }
+.exif-section { font-size: 11px; font-weight: 650; color: var(--text-faint); text-transform: uppercase; letter-spacing: .4px; margin: 12px 0 4px; }
+.batch-field { display: grid; grid-template-columns: 16px 74px 1fr; align-items: center; gap: 8px; margin-bottom: 8px; }
+.batch-field label { font-size: 12px; color: var(--text-dim); cursor: pointer; }
+.batch-result { display: flex; align-items: center; gap: 8px; padding: 5px 0; border-bottom: 1px solid var(--border); font-size: 12px; }
+.batch-result:last-child { border-bottom: none; }
+.batch-result .batch-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.batch-result .batch-reason { color: var(--red); font-size: 11px; margin-left: auto; text-align: right; }
