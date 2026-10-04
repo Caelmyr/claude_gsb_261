@@ -229,3 +229,64 @@ input[type="color"] { width: 100%; height: 34px; border: 1px solid var(--border-
 
 .keypoint-stats { font-size: 12px; color: var(--text-dim); }
 .desc-preview { font-family: var(--mono); font-size: 11px; color: var(--text-faint); word-break: break-all; max-height: 90px; overflow: auto; background: var(--bg-soft); padding: 8px; border-radius: var(--radius-sm); }
+
+/* ---------- 元信息管理 ---------- */
+.md-grid { position: relative; }
+.md-check {
+  position: absolute; top: 6px; left: 6px; z-index: 2;
+  width: 22px; height: 22px; display: grid; place-items: center;
+  background: rgba(0,0,0,.5); border-radius: 6px; cursor: pointer;
+}
+.md-check input { width: 14px; height: 14px; cursor: pointer; margin: 0; }
+.md-preview { width: 100%; border-radius: 8px; margin-bottom: 10px; background: #0b0f15; }
+.md-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+.md-toolbar .spacer { flex: 1; }
+.md-alert {
+  border-radius: var(--radius-sm); padding: 8px 12px; font-size: 12px; margin-bottom: 10px;
+  border: 1px solid var(--border); background: var(--bg-soft); color: var(--text-dim);
+}
+.md-alert.warn { border-color: rgba(245,181,68,.45); color: var(--amber); background: rgba(245,181,68,.08); }
+.md-alert.error { border-color: rgba(242,95,92,.45); color: var(--red); background: rgba(242,95,92,.08); }
+.md-section {
+  font-size: 12px; font-weight: 650; color: var(--text-faint); text-transform: uppercase;
+  letter-spacing: .4px; margin: 14px 0 8px; padding-top: 12px; border-top: 1px solid var(--border);
+}
+.md-section:first-child { border-top: none; padding-top: 0; margin-top: 4px; }
+.md-kv {
+  display: flex; justify-content: space-between; gap: 12px; font-size: 12px;
+  padding: 4px 0; color: var(--text-dim);
+}
+.md-kv b { color: var(--text); font-weight: 500; text-align: right; word-break: break-all; }
+.md-row { display: flex; gap: 10px; }
+.md-row .field { flex: 1; min-width: 0; }
+textarea {
+  width: 100%; padding: 8px 10px; border-radius: var(--radius-sm); border: 1px solid var(--border-strong);
+  background: var(--bg-soft); color: var(--text); font-size: 13px; font-family: inherit; resize: vertical;
+}
+textarea:focus { outline: none; border-color: var(--accent); }
+.md-field-err { color: var(--red); font-size: 11px; margin-top: 4px; }
+.field.has-error input, .field.has-error textarea { border-color: var(--red); }
+.md-raw { margin-top: 12px; }
+.md-raw summary { cursor: pointer; font-size: 12px; color: var(--text-dim); user-select: none; }
+.md-raw-table { margin-top: 8px; }
+.md-raw-table td:last-child { max-width: 180px; word-break: break-all; }
+.md-save-msg { margin-top: 10px; font-size: 12px; border-radius: var(--radius-sm); padding: 8px 12px; }
+.md-save-msg.error { color: var(--red); background: rgba(242,95,92,.08); border: 1px solid rgba(242,95,92,.35); }
+.md-save-msg.ok { color: var(--green); background: rgba(53,199,120,.08); border: 1px solid rgba(53,199,120,.35); }
+.md-pick { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-dim); margin: 10px 0 6px; }
+.md-pick input { width: 15px; height: 15px; }
+.md-batch-fields input:disabled, .md-batch-fields textarea:disabled, .md-batch-fields select:disabled {
+  opacity: .45;
+}
+.md-result-list { max-height: 320px; overflow: auto; display: flex; flex-direction: column; gap: 6px; }
+.md-result-row {
+  display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: var(--radius-sm);
+  background: var(--bg-soft); border: 1px solid var(--border); font-size: 12px;
+}
+.md-result-row.fail { border-color: rgba(242,95,92,.45); background: rgba(242,95,92,.06); }
+.md-result-row.ok .md-ico { color: var(--green); }
+.md-result-row.fail .md-ico { color: var(--red); }
+.md-rname { font-weight: 600; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.md-rerr { color: var(--red); font-size: 11px; flex: 1; min-width: 0; }
+.md-retry { margin-left: auto; flex: none; }
+@media (max-width: 1100px) { .split[style*="380px"] { grid-template-columns: 1fr !important; } }

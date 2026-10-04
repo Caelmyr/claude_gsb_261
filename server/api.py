@@ -15,6 +15,7 @@ from .batch import BatchManager, process_image
 from .cache import ResultCache, make_key
 from .history import HistoryManager
 from .image_store import ImageStore
+from . import metadata as metadata_mod
 from .nodes import CATEGORIES, get_public_nodes
 from .storage import JsonStore, now_iso
 from . import storage as storage_mod
@@ -37,14 +38,18 @@ bp = Blueprint("api", __name__, url_prefix="/api")
 # ---------------------------------------------------------------------------
 def _image_view(rec):
     """给前端用的图像记录视图（附加缩略图/文件 URL）。"""
+    # updated_at 作为缓存版本号：元信息写回后 URL 变化，浏览器不会命中旧图缓存
+    ver = (rec.get("updated_at") or rec.get("created_at") or "").replace(":", "").replace("-", "")
+    suffix = f"?v={ver}" if ver else ""
     return {
         "id": rec["id"], "filename": rec["filename"], "format": rec["format"],
         "width": rec["width"], "height": rec["height"],
         "size_bytes": rec["size_bytes"], "created_at": rec["created_at"],
+        "updated_at": rec.get("updated_at"),
         "tags": rec.get("tags", []), "note": rec.get("note", ""),
         "annotations": rec.get("annotations", []),
-        "thumbnail_url": f"/api/images/{rec['id']}/thumbnail",
-        "file_url": f"/api/images/{rec['id']}/file",
+        "thumbnail_url": f"/api/images/{rec['id']}/thumbnail{suffix}",
+        "file_url": f"/api/images/{rec['id']}/file{suffix}",
     }
 
 
@@ -197,10 +202,16 @@ def delete_image(image_id):
 
 @bp.get("/images/<image_id>/file")
 def image_file(image_id):
+    rec = image_store.get(image_id)
     path = image_store.file_path(image_id)
-    if not path:
+    if not rec or not path:
         return jsonify({"error": "not found"}), 404
-    return send_file(path, mimetype="image/png" if path.endswith(".png") else "image/jpeg")
+    mimetype = {
+        "JPEG": "image/jpeg", "JPG": "image/jpeg", "PNG": "image/png",
+        "WEBP": "image/webp", "GIF": "image/gif", "BMP": "image/bmp",
+        "TIFF": "image/tiff",
+    }.get(str(rec.get("format", "")).upper(), "image/jpeg")
+    return send_file(path, mimetype=mimetype)
 
 
 @bp.get("/images/<image_id>/thumbnail")
@@ -230,6 +241,94 @@ def delete_annotation(image_id, index):
     if not rec:
         return jsonify({"error": "not found"}), 404
     return jsonify(_image_view(rec))
+
+
+# ---------------------------------------------------------------------------
+# 隐藏信息（EXIF）查看与编辑
+# ---------------------------------------------------------------------------
+_METADATA_FIELDS = ("taken_at", "orientation", "description", "gps_lat", "gps_lon")
+
+
+def _apply_one_metadata(image_id, updates):
+    """对单张图执行元信息写回。
+
+    返回 (view, None) 或 (None, {"image_id", "filename", "error", "fields"})。
+    任何异常都收敛为逐图错误，供批量接口隔离失败。
+    """
+    rec = image_store.get(image_id)
+    if not rec:
+        return None, {"image_id": image_id, "filename": "", "error": "图像不存在", "fields": {}}
+    filename = rec.get("filename", "")
+    path = image_store.file_path(image_id)
+    try:
+        new_data = metadata_mod.apply_metadata(path, updates)
+        image_store.rewrite_bytes(image_id, new_data)
+    except metadata_mod.MetadataError as exc:
+        return None, {"image_id": image_id, "filename": filename,
+                      "error": str(exc), "fields": exc.fields}
+    except Exception as exc:  # noqa: BLE001
+        return None, {"image_id": image_id, "filename": filename,
+                      "error": f"写回失败：{exc}", "fields": {}}
+    meta = metadata_mod.read_metadata(image_store.file_path(image_id))
+    return {"image_id": image_id, "filename": filename, "status": "ok", "metadata": meta}, None
+
+
+@bp.get("/images/<image_id>/metadata")
+def get_metadata(image_id):
+    path = image_store.file_path(image_id)
+    if not path:
+        return jsonify({"error": "图像不存在"}), 404
+    try:
+        meta = metadata_mod.read_metadata(path)
+    except metadata_mod.MetadataError as exc:
+        return jsonify({"error": str(exc)}), 422
+    return jsonify({"image_id": image_id, "metadata": meta})
+
+
+@bp.put("/images/<image_id>/metadata")
+def update_metadata(image_id):
+    data = request.get_json(silent=True) or {}
+    updates = {k: data[k] for k in _METADATA_FIELDS if k in data}
+    if not updates:
+        return jsonify({"error": "没有可更新的字段"}), 400
+    view, err = _apply_one_metadata(image_id, updates)
+    if err:
+        code = 404 if err["error"] == "图像不存在" else 422
+        return jsonify({"error": err["error"], "fields": err["fields"]}), code
+    return jsonify(view)
+
+
+@bp.post("/images/metadata/batch")
+def batch_update_metadata():
+    """批量修改多张图的元信息：逐张独立处理，单张/单字段失败不拖累整批。"""
+    data = request.get_json(silent=True) or {}
+    items = data.get("items")
+    updates = {k: data[k] for k in _METADATA_FIELDS if k in data}
+    if not items and updates:
+        items = [{"image_id": iid, **updates} for iid in data.get("image_ids", [])]
+    if not items:
+        return jsonify({"error": "缺少 items 或 image_ids"}), 400
+
+    succeeded, failed = [], []
+    for item in items:
+        image_id = item.get("image_id")
+        per = {k: item[k] for k in _METADATA_FIELDS if k in item}
+        if not image_id:
+            failed.append({"image_id": None, "filename": "", "error": "缺少 image_id", "fields": {}})
+            continue
+        view, err = _apply_one_metadata(image_id, per)
+        if err:
+            failed.append(err)
+        else:
+            succeeded.append(view)
+
+    return jsonify({
+        "total": len(items),
+        "succeeded_count": len(succeeded),
+        "failed_count": len(failed),
+        "succeeded": succeeded,
+        "failed": failed,
+    })
 
 
 # ---------------------------------------------------------------------------

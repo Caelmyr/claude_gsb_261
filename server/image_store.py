@@ -136,6 +136,38 @@ class ImageStore:
 
         return self.meta.update(_upd).get(image_id)
 
+    def rewrite_bytes(self, image_id, data: bytes):
+        """用新的文件字节原地替换图像（元信息编辑后写回图片本身）。
+
+        记录 id 保持不变（历史/缓存/批量任务里的引用不断链），仅原子替换
+        磁盘文件、刷新尺寸/大小并重建缩略图。
+        """
+        rec = self.get(image_id)
+        if not rec:
+            return None
+        try:
+            img = Image.open(io.BytesIO(data))
+            width, height = img.size
+            fmt = img.format or rec.get("format")
+        except UnidentifiedImageError:
+            raise ValueError("改写后的文件不是有效图像")
+
+        path = self.file_path(image_id)
+        atomic_write_bytes(path, data)
+        self._make_thumbnail(image_id, data)
+
+        def _upd(doc):
+            doc = dict(doc)
+            r = dict(doc.get(image_id, {}))
+            r.update({
+                "width": width, "height": height, "format": fmt,
+                "size_bytes": len(data), "updated_at": now_iso(),
+            })
+            doc[image_id] = r
+            return doc
+
+        return self.meta.update(_upd).get(image_id)
+
     def add_annotation(self, image_id, box, label, color="#ff5252"):
         """给图像加一条人工标注（目标检测标注页）。"""
         def _upd(doc):

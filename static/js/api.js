@@ -13,7 +13,10 @@ window.Api = (function () {
     const data = ct.includes("application/json") ? await resp.json() : await resp.blob();
     if (!resp.ok) {
       const msg = (data && data.error) ? data.error : ("HTTP " + resp.status);
-      throw new Error(msg);
+      const err = new Error(msg);
+      if (data && typeof data === "object") err.fields = data.fields;
+      err.status = resp.status;
+      throw err;
     }
     return data;
   }

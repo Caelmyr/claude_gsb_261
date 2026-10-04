@@ -46,6 +46,7 @@ window.Views.upload = (function () {
           <button class="btn btn-sm" id="up-rename">重命名</button>
           <button class="btn btn-sm" id="up-tags">编辑标签</button>
           <button class="btn btn-sm" id="up-note">备注</button>
+          <button class="btn btn-sm btn-primary" id="up-meta">🏷️ 查看/编辑隐藏信息</button>
           <button class="btn btn-sm btn-danger" id="up-del">删除</button>
         </div>
       </div>`;
@@ -60,6 +61,13 @@ window.Views.upload = (function () {
     box.querySelector("#up-rename").onclick = () => editField(el, rec, "filename", "重命名");
     box.querySelector("#up-tags").onclick = () => editField(el, rec, "tags", "标签（逗号分隔）");
     box.querySelector("#up-note").onclick = () => editField(el, rec, "note", "备注");
+    box.querySelector("#up-meta").onclick = () => {
+      if (window.Views.metadata && window.Views.metadata.openFor) {
+        window.Views.metadata.openFor(rec.id);
+      } else {
+        window.App.show("metadata");
+      }
+    };
   }
 
   function editField(el, rec, field, label) {
